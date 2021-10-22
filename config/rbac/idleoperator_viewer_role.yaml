@@ -1,0 +1,20 @@
+# permissions for end users to view idleoperators.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: idleoperator-viewer-role
+rules:
+- apiGroups:
+  - cache.mickaelchau.fr
+  resources:
+  - idleoperators
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - cache.mickaelchau.fr
+  resources:
+  - idleoperators/status
+  verbs:
+  - get

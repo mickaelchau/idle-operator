@@ -1,0 +1,17 @@
+apiVersion: cache.mickaelchau.fr/v1alpha1
+kind: IdleOperator
+metadata:
+  name: idleoperator-sample
+spec:
+  idle:
+    - matchLabels:
+      - app: label2d
+      cron: 0 19 * * 1-5
+    - matchLabels:
+      - app: label1d
+      cron: 0 19 * * 1-5
+  unidle:
+    - matchLabels:
+      - app: label2
+      - app: label1
+      cron: 0 7 * * 1-5

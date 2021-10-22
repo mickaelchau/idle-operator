@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tata2
+  labels:
+    app: label1
+    test: test
+spec:
+  replicas: 10
+  selector:
+    matchLabels:
+      app: label1
+  template:
+    metadata:
+      labels:
+        app: label1
+        type: node
+        manger: frie
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.14.2
+        ports:
+        - containerPort: 80
+

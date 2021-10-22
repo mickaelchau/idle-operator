@@ -5,10 +5,10 @@ metadata:
 spec:
   idle:
     - matchLabels:
-      - app: label2d
+      - app: label2xx
       cron: 0 19 * * 1-5
     - matchLabels:
-      - app: label1d
+      - app: label1x
       cron: 0 19 * * 1-5
   unidle:
     - matchLabels:

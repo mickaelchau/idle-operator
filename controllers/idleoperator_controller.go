@@ -74,12 +74,15 @@ func (reconciler *IdleOperatorReconciler) buildCRStatus(ctx context.Context, clu
 	idlingCR *cachev1alpha1.IdleOperator) (ctrl.Result, error) {
 	for _, clusterDeploy := range clusterDeploys {
 		alreadyInStatus := false
-		for _, statusDeploy := range idlingCR.Status.Deployments {
+		for i, statusDeploy := range idlingCR.Status.Deployments {
 			if statusDeploy.Name == clusterDeploy.ObjectMeta.Name {
 				alreadyInStatus = true
-				statusDeploy.Name = clusterDeploy.ObjectMeta.Name
-				statusDeploy.Size = *clusterDeploy.Spec.Replicas
-				statusDeploy.Phase = "idle"
+				if statusDeploy.Phase != "idle" {
+					statusDeploy.Name = clusterDeploy.ObjectMeta.Name
+					statusDeploy.Size = *clusterDeploy.Spec.Replicas
+					statusDeploy.Phase = "idle"
+					idlingCR.Status.Deployments[i] = statusDeploy
+				}
 			}
 		}
 		if !alreadyInStatus {
@@ -105,14 +108,15 @@ func (reconciler *IdleOperatorReconciler) buildCRStatus(ctx context.Context, clu
 func (reconciler *IdleOperatorReconciler) givePodsToDeploys(ctx context.Context, clusterDeploys []appsv1.Deployment,
 	idlingCR *cachev1alpha1.IdleOperator) (ctrl.Result, error) {
 	for _, clusterDep := range clusterDeploys {
-		for _, statusDep := range idlingCR.Status.Deployments {
-			if clusterDep.Name == statusDep.Name {
+		for i, statusDep := range idlingCR.Status.Deployments {
+			if clusterDep.Name == statusDep.Name && statusDep.Phase != "unidle" {
 				clusterDep.Spec.Replicas = &statusDep.Size
 				statusDep.Phase = "unidle"
 				err := reconciler.Update(ctx, &clusterDep)
 				if err != nil {
 					return ctrl.Result{}, err
 				}
+				idlingCR.Status.Deployments[i] = statusDep
 			}
 		}
 	}
@@ -150,6 +154,7 @@ func (reconciler *IdleOperatorReconciler) manageIdling(ctx context.Context,
 
 func (reconciler *IdleOperatorReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = log.FromContext(ctx)
+	fmt.Println("hello")
 	var IdlingCR cachev1alpha1.IdleOperator
 	err := reconciler.Get(ctx, types.NamespacedName{Name: req.Name, Namespace: req.Namespace}, &IdlingCR)
 	if err != nil {

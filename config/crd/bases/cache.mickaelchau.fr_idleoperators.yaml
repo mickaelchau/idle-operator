@@ -43,7 +43,7 @@ spec:
                   Edit iddledeployfromcrontable_types.go to remove/update
                 items:
                   properties:
-                    cron:
+                    duration:
                       type: string
                     matchLabels:
                       items:
@@ -51,15 +51,18 @@ spec:
                           type: string
                         type: object
                       type: array
+                    time:
+                      type: string
                   required:
-                  - cron
+                  - duration
                   - matchLabels
+                  - time
                   type: object
                 type: array
               unidle:
                 items:
                   properties:
-                    cron:
+                    duration:
                       type: string
                     matchLabels:
                       items:
@@ -67,9 +70,12 @@ spec:
                           type: string
                         type: object
                       type: array
+                    time:
+                      type: string
                   required:
-                  - cron
+                  - duration
                   - matchLabels
+                  - time
                   type: object
                 type: array
             required:

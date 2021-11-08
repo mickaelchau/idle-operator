@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 
+	CronManagment "github.com/mickaelchau/new-operator/controllers/cron_managment"
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -129,12 +130,14 @@ func (reconciler *IdleOperatorReconciler) givePodsToDeploys(ctx context.Context,
 
 func (reconciler *IdleOperatorReconciler) manageIdling(ctx context.Context,
 	IdlingCR cachev1alpha1.IdleOperator, idling_type string) (ctrl.Result, error) {
-	var idling_spec []cachev1alpha1.IdlingSpecs
-	if idling_type == "idle" {
-		idling_spec = IdlingCR.Spec.Idle
-	} else {
-		idling_spec = IdlingCR.Spec.Unidle
-	}
+	var idling_spec []cachev1alpha1.IdlingSpecs = IdlingCR.Spec.Idle
+	/*
+		if idling_type == "idle" {
+			idling_spec = IdlingCR.Spec.Idle
+		} else {
+			idling_spec = IdlingCR.Spec.Unidle
+		}
+	*/
 	for _, depSpecs := range idling_spec {
 		for _, label := range depSpecs.MatchingLabels {
 			getMatchingDeploys := &appsv1.DeploymentList{}
@@ -142,7 +145,11 @@ func (reconciler *IdleOperatorReconciler) manageIdling(ctx context.Context,
 			if err != nil {
 				return res, err
 			}
-			if idling_type == "idle" {
+			startIdling, err := CronManagment.InTimezoneOrNot(depSpecs.Time, depSpecs.Duration)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+			if startIdling {
 				reconciler.buildCRStatus(ctx, getMatchingDeploys.Items, &IdlingCR)
 			} else {
 				reconciler.givePodsToDeploys(ctx, getMatchingDeploys.Items, &IdlingCR)
@@ -154,7 +161,6 @@ func (reconciler *IdleOperatorReconciler) manageIdling(ctx context.Context,
 
 func (reconciler *IdleOperatorReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = log.FromContext(ctx)
-	fmt.Println("hello")
 	var IdlingCR cachev1alpha1.IdleOperator
 	err := reconciler.Get(ctx, types.NamespacedName{Name: req.Name, Namespace: req.Namespace}, &IdlingCR)
 	if err != nil {
@@ -167,10 +173,12 @@ func (reconciler *IdleOperatorReconciler) Reconcile(ctx context.Context, req ctr
 	if err != nil {
 		return res, err
 	}
-	res, err = reconciler.manageIdling(ctx, IdlingCR, "unidle")
-	if err != nil {
-		return res, err
-	}
+	/*
+		res, err = reconciler.manageIdling(ctx, IdlingCR, "unidle")
+		if err != nil {
+			return res, err
+		}
+	*/
 	watchCRStatus(IdlingCR.Status.Deployments)
 	return ctrl.Result{}, nil
 }

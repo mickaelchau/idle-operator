@@ -24,8 +24,9 @@ import (
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
 type IdlingSpecs struct {
-	CronTable      string              `json:"cron"`
 	MatchingLabels []map[string]string `json:"matchLabels"`
+	Time           string              `json:"time"`
+	Duration       string              `json:"duration"`
 }
 type Deploy struct {
 	Name  string `json:"name"`

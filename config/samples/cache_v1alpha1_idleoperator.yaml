@@ -5,7 +5,7 @@ metadata:
 spec:
   idle:
     - matchLabels:
-      - app: label2c
-      - app: label1d
+      - app: label2
+      - app: label1
       time: 0 17 * * 1-5
-      duration: 10h
+      duration: 2h

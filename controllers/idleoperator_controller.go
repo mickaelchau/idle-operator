@@ -87,17 +87,17 @@ func (reconciler *IdleOperatorReconciler) buildCRStatus(ctx context.Context, clu
 	idlingCR *cachev1alpha1.IdleOperator, label map[string]string) (ctrl.Result, error) {
 	for _, clusterDeploy := range clusterDeploys {
 		alreadyInStatus := false
-		for i, statusDeploy := range idlingCR.Status.Deployments {
-			if statusDeploy.Name == clusterDeploy.ObjectMeta.Name {
+		for i, statusDep := range idlingCR.Status.Deployments {
+			if statusDep.Name == clusterDeploy.ObjectMeta.Name {
 				alreadyInStatus = true
-				statusDeploy.Tested = true
+				statusDep.Tested = true
 				if *clusterDeploy.Spec.Replicas != 0 {
-					statusDeploy.Size = *clusterDeploy.Spec.Replicas
+					statusDep.Size = *clusterDeploy.Spec.Replicas
 				}
-				if statusDeploy.Phase == "unidle" {
-					statusDeploy.Phase = "idle"
+				if statusDep.Phase == "unidle" {
+					statusDep.Phase = "idle"
 				}
-				idlingCR.Status.Deployments[i] = statusDeploy
+				idlingCR.Status.Deployments[i] = statusDep
 			}
 		}
 		if !alreadyInStatus {
@@ -118,13 +118,13 @@ func (reconciler *IdleOperatorReconciler) buildCRStatus(ctx context.Context, clu
 
 func (reconciler *IdleOperatorReconciler) givePodsToDeploys(ctx context.Context, clusterDeploys []appsv1.Deployment,
 	idlingCR *cachev1alpha1.IdleOperator) (ctrl.Result, error) {
-	for _, depStatus := range idlingCR.Status.Deployments {
+	for _, statusDep := range idlingCR.Status.Deployments {
 		for _, clusterDep := range clusterDeploys {
-			if clusterDep.Name == depStatus.Name {
-				if !depStatus.Tested {
-					clusterDep.Spec.Replicas = &depStatus.Size
+			if clusterDep.Name == statusDep.Name {
+				if !statusDep.Tested {
+					clusterDep.Spec.Replicas = &statusDep.Size
 				}
-				if depStatus.Tested {
+				if statusDep.Tested {
 					*clusterDep.Spec.Replicas = 0
 				}
 				err := reconciler.Update(ctx, &clusterDep)
@@ -143,11 +143,6 @@ func (reconciler *IdleOperatorReconciler) manageIdling(ctx context.Context,
 		statusDep.Tested = false
 		IdlingCR.Status.Deployments[i] = statusDep
 	}
-	/*
-		err := reconciler.Status().Update(ctx, &IdlingCR)
-		if err != nil {
-			return ctrl.Result{}, err
-		}*/
 	idling_spec := IdlingCR.Spec.Idle
 	for _, depSpecs := range idling_spec {
 		for _, label := range depSpecs.MatchingLabels {

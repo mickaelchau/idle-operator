@@ -20,11 +20,11 @@ func InTimezoneOrNot(startTime string, duration string) (bool, error) {
 		return false, err
 	}
 	nowTime := time.Now()
-	log.Println(nowTime.Day(), nowTime.Month(), nowTime.Year(), nowTime.Hour(), nowTime.Minute(), nowTime.Second())
+	//log.Println(nowTime.Day(), nowTime.Month(), nowTime.Year(), nowTime.Hour(), nowTime.Minute(), nowTime.Second())
 	substractedDurationTime := nowTime.Add(-parsedDuration)
 	prevIdlingTime := cronStartTime.Next(substractedDurationTime)
-	log.Println(prevIdlingTime.Day(), prevIdlingTime.Month(), prevIdlingTime.Year(),
-		prevIdlingTime.Hour(), prevIdlingTime.Minute(), prevIdlingTime.Second())
+	//log.Println(prevIdlingTime.Day(), prevIdlingTime.Month(), prevIdlingTime.Year(),
+	//	prevIdlingTime.Hour(), prevIdlingTime.Minute(), prevIdlingTime.Second())
 	pastTime := prevIdlingTime.Before(time.Now())
 	return pastTime, nil
 }

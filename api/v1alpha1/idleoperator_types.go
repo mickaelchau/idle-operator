@@ -29,9 +29,10 @@ type IdlingSpecs struct {
 	Duration       string              `json:"duration"`
 }
 type Deploy struct {
-	Name  string `json:"name"`
-	Size  int32  `json:"size"`
-	Phase string `json:"phase"`
+	Name   string `json:"name"`
+	Size   int32  `json:"size"`
+	Phase  string `json:"phase"`
+	Tested bool   `json:"tested"`
 }
 
 // IddleDeployFromCrontableSpec defines the desired state of IddleDeployFromCrontable
@@ -39,8 +40,7 @@ type IdleOperatorSpec struct {
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// Foo is an example field of IddleDeployFromCrontable. Edit iddledeployfromcrontable_types.go to remove/update
-	Idle   []IdlingSpecs `json:"idle"`
-	Unidle []IdlingSpecs `json:"unidle"`
+	Idle []IdlingSpecs `json:"idle"`
 }
 
 // IddleDeployFromCrontableStatus defines the observed state of IddleDeployFromCrontable

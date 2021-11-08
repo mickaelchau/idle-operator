@@ -6,11 +6,6 @@ spec:
   idle:
     - matchLabels:
       - app: label2c
-      - app: label1
-      time: 0 13 * * 1-5
-      duration: 1h
-  unidle:
-    - matchLabels:
-      - app: label2
-      time: 0 13 * * 1-5
-      duration: 3h
+      - app: label1d
+      time: 0 17 * * 1-5
+      duration: 10h

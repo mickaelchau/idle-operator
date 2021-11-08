@@ -54,11 +54,11 @@ type IdleOperatorReconciler struct {
 func watchCRStatus(Deployments []cachev1alpha1.Deploy) {
 	fmt.Println("Deployments Status")
 	for _, deploy := range Deployments {
-		fmt.Println("name:", deploy.Name, "phase:", deploy.Phase, "replicas:", deploy.Size)
+		fmt.Println("name:", deploy.Name, "phase:", deploy.Phase, "replicas:", deploy.Size, "tested:", deploy.Tested)
 	}
 }
 
-func (reconciler *IdleOperatorReconciler) getDeploysFromCluster(ctx context.Context, getMatchingDeploys *appsv1.DeploymentList,
+func (reconciler *IdleOperatorReconciler) getDeploysFromLabel(ctx context.Context, getMatchingDeploys *appsv1.DeploymentList,
 	namespace string, label map[string]string) (ctrl.Result, error) {
 	options := []client.ListOption{
 		client.InNamespace(namespace),
@@ -71,19 +71,33 @@ func (reconciler *IdleOperatorReconciler) getDeploysFromCluster(ctx context.Cont
 	return ctrl.Result{}, nil
 }
 
+func (reconciler *IdleOperatorReconciler) getAllClusterDeploys(ctx context.Context, getMatchingDeploys *appsv1.DeploymentList,
+	namespace string) (ctrl.Result, error) {
+	options := []client.ListOption{
+		client.InNamespace(namespace),
+	}
+	err := reconciler.List(ctx, getMatchingDeploys, options...)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	return ctrl.Result{}, nil
+}
+
 func (reconciler *IdleOperatorReconciler) buildCRStatus(ctx context.Context, clusterDeploys []appsv1.Deployment,
-	idlingCR *cachev1alpha1.IdleOperator) (ctrl.Result, error) {
+	idlingCR *cachev1alpha1.IdleOperator, label map[string]string) (ctrl.Result, error) {
 	for _, clusterDeploy := range clusterDeploys {
 		alreadyInStatus := false
 		for i, statusDeploy := range idlingCR.Status.Deployments {
 			if statusDeploy.Name == clusterDeploy.ObjectMeta.Name {
 				alreadyInStatus = true
-				if statusDeploy.Phase != "idle" {
-					statusDeploy.Name = clusterDeploy.ObjectMeta.Name
+				statusDeploy.Tested = true
+				if *clusterDeploy.Spec.Replicas != 0 {
 					statusDeploy.Size = *clusterDeploy.Spec.Replicas
-					statusDeploy.Phase = "idle"
-					idlingCR.Status.Deployments[i] = statusDeploy
 				}
+				if statusDeploy.Phase == "unidle" {
+					statusDeploy.Phase = "idle"
+				}
+				idlingCR.Status.Deployments[i] = statusDeploy
 			}
 		}
 		if !alreadyInStatus {
@@ -91,34 +105,8 @@ func (reconciler *IdleOperatorReconciler) buildCRStatus(ctx context.Context, clu
 			newStatusDeploy.Name = clusterDeploy.ObjectMeta.Name
 			newStatusDeploy.Size = *clusterDeploy.Spec.Replicas
 			newStatusDeploy.Phase = "idle"
+			newStatusDeploy.Tested = true
 			idlingCR.Status.Deployments = append(idlingCR.Status.Deployments, newStatusDeploy)
-		}
-		*clusterDeploy.Spec.Replicas = 0
-		err := reconciler.Update(ctx, &clusterDeploy)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-		err = reconciler.Status().Update(ctx, idlingCR)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-	}
-	return ctrl.Result{}, nil
-}
-
-func (reconciler *IdleOperatorReconciler) givePodsToDeploys(ctx context.Context, clusterDeploys []appsv1.Deployment,
-	idlingCR *cachev1alpha1.IdleOperator) (ctrl.Result, error) {
-	for _, clusterDep := range clusterDeploys {
-		for i, statusDep := range idlingCR.Status.Deployments {
-			if clusterDep.Name == statusDep.Name && statusDep.Phase != "unidle" {
-				clusterDep.Spec.Replicas = &statusDep.Size
-				statusDep.Phase = "unidle"
-				err := reconciler.Update(ctx, &clusterDep)
-				if err != nil {
-					return ctrl.Result{}, err
-				}
-				idlingCR.Status.Deployments[i] = statusDep
-			}
 		}
 	}
 	err := reconciler.Status().Update(ctx, idlingCR)
@@ -128,20 +116,43 @@ func (reconciler *IdleOperatorReconciler) givePodsToDeploys(ctx context.Context,
 	return ctrl.Result{}, nil
 }
 
+func (reconciler *IdleOperatorReconciler) givePodsToDeploys(ctx context.Context, clusterDeploys []appsv1.Deployment,
+	idlingCR *cachev1alpha1.IdleOperator) (ctrl.Result, error) {
+	for _, depStatus := range idlingCR.Status.Deployments {
+		for _, clusterDep := range clusterDeploys {
+			if clusterDep.Name == depStatus.Name {
+				if !depStatus.Tested {
+					clusterDep.Spec.Replicas = &depStatus.Size
+				}
+				if depStatus.Tested {
+					*clusterDep.Spec.Replicas = 0
+				}
+				err := reconciler.Update(ctx, &clusterDep)
+				if err != nil {
+					return ctrl.Result{}, err
+				}
+			}
+		}
+	}
+	return ctrl.Result{}, nil
+}
+
 func (reconciler *IdleOperatorReconciler) manageIdling(ctx context.Context,
 	IdlingCR cachev1alpha1.IdleOperator, idling_type string) (ctrl.Result, error) {
-	var idling_spec []cachev1alpha1.IdlingSpecs = IdlingCR.Spec.Idle
+	for i, statusDep := range IdlingCR.Status.Deployments {
+		statusDep.Tested = false
+		IdlingCR.Status.Deployments[i] = statusDep
+	}
 	/*
-		if idling_type == "idle" {
-			idling_spec = IdlingCR.Spec.Idle
-		} else {
-			idling_spec = IdlingCR.Spec.Unidle
-		}
-	*/
+		err := reconciler.Status().Update(ctx, &IdlingCR)
+		if err != nil {
+			return ctrl.Result{}, err
+		}*/
+	idling_spec := IdlingCR.Spec.Idle
 	for _, depSpecs := range idling_spec {
 		for _, label := range depSpecs.MatchingLabels {
 			getMatchingDeploys := &appsv1.DeploymentList{}
-			res, err := reconciler.getDeploysFromCluster(ctx, getMatchingDeploys, IdlingCR.Namespace, label)
+			res, err := reconciler.getDeploysFromLabel(ctx, getMatchingDeploys, IdlingCR.Namespace, label)
 			if err != nil {
 				return res, err
 			}
@@ -150,13 +161,21 @@ func (reconciler *IdleOperatorReconciler) manageIdling(ctx context.Context,
 				return ctrl.Result{}, err
 			}
 			if startIdling {
-				reconciler.buildCRStatus(ctx, getMatchingDeploys.Items, &IdlingCR)
-			} else {
-				reconciler.givePodsToDeploys(ctx, getMatchingDeploys.Items, &IdlingCR)
+				reconciler.buildCRStatus(ctx, getMatchingDeploys.Items, &IdlingCR, label)
 			}
 		}
 	}
+	getAllDeploys := &appsv1.DeploymentList{}
+	res, err := reconciler.getAllClusterDeploys(ctx, getAllDeploys, IdlingCR.Namespace)
+	if err != nil {
+		return res, err
+	}
+	res, err = reconciler.givePodsToDeploys(ctx, getAllDeploys.Items, &IdlingCR)
+	if err != nil {
+		return res, err
+	}
 	return ctrl.Result{}, nil
+
 }
 
 func (reconciler *IdleOperatorReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -173,12 +192,6 @@ func (reconciler *IdleOperatorReconciler) Reconcile(ctx context.Context, req ctr
 	if err != nil {
 		return res, err
 	}
-	/*
-		res, err = reconciler.manageIdling(ctx, IdlingCR, "unidle")
-		if err != nil {
-			return res, err
-		}
-	*/
 	watchCRStatus(IdlingCR.Status.Deployments)
 	return ctrl.Result{}, nil
 }

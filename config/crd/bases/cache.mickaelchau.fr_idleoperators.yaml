@@ -59,28 +59,8 @@ spec:
                   - time
                   type: object
                 type: array
-              unidle:
-                items:
-                  properties:
-                    duration:
-                      type: string
-                    matchLabels:
-                      items:
-                        additionalProperties:
-                          type: string
-                        type: object
-                      type: array
-                    time:
-                      type: string
-                  required:
-                  - duration
-                  - matchLabels
-                  - time
-                  type: object
-                type: array
             required:
             - idle
-            - unidle
             type: object
           status:
             description: IddleDeployFromCrontableStatus defines the observed state
@@ -99,10 +79,13 @@ spec:
                     size:
                       format: int32
                       type: integer
+                    tested:
+                      type: boolean
                   required:
                   - name
                   - phase
                   - size
+                  - tested
                   type: object
                 type: array
             required:

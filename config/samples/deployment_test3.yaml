@@ -1,21 +1,18 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: tata2
+  name: sausau
   labels:
-    app: label1
-    test: test
+    test: saucisse
 spec:
   replicas: 7
   selector:
     matchLabels:
-      app: label1
+      test: saucisse
   template:
     metadata:
       labels:
-        app: label1
-        type: node
-        manger: frie
+        test: saucisse
     spec:
       containers:
       - name: nginx

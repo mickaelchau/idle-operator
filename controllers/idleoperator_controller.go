@@ -18,7 +18,8 @@ package controllers
 
 import (
 	"context"
-	"fmt"
+
+	"log"
 
 	CronManagment "github.com/mickaelchau/new-operator/controllers/cron_managment"
 	appsv1 "k8s.io/api/apps/v1"
@@ -27,7 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
+	oplog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	cachev1alpha1 "github.com/mickaelchau/new-operator/api/v1alpha1"
 )
@@ -52,14 +53,14 @@ type IdleOperatorReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.9.2/pkg/reconcile
 func watchCRStatus(Deployments []cachev1alpha1.Deploy) {
-	fmt.Println("Deployments Status")
-	for _, deploy := range Deployments {
-		fmt.Println("name:", deploy.Name, "phase:", deploy.Phase, "replicas:", deploy.Size, "tested:", deploy.Tested)
+	log.Println("Deployments Status")
+	for _, statsusDep := range Deployments {
+		log.Println("name:", statsusDep.Name, "replicas:", statsusDep.Size, "tested:", statsusDep.Tested)
 	}
 }
 
-func (reconciler *IdleOperatorReconciler) getDeploysFromLabel(ctx context.Context, getMatchingDeploys *appsv1.DeploymentList,
-	namespace string, label map[string]string) (ctrl.Result, error) {
+func (reconciler *IdleOperatorReconciler) getDeploysFromLabelAndNamespace(ctx context.Context,
+	getMatchingDeploys *appsv1.DeploymentList, label map[string]string, namespace string) (ctrl.Result, error) {
 	options := []client.ListOption{
 		client.InNamespace(namespace),
 		client.MatchingLabels(label),
@@ -71,12 +72,9 @@ func (reconciler *IdleOperatorReconciler) getDeploysFromLabel(ctx context.Contex
 	return ctrl.Result{}, nil
 }
 
-func (reconciler *IdleOperatorReconciler) getAllClusterDeploys(ctx context.Context, getMatchingDeploys *appsv1.DeploymentList,
-	namespace string) (ctrl.Result, error) {
-	options := []client.ListOption{
-		client.InNamespace(namespace),
-	}
-	err := reconciler.List(ctx, getMatchingDeploys, options...)
+func (reconciler *IdleOperatorReconciler) getAllClusterDeploys(ctx context.Context,
+	getMatchingDeploys *appsv1.DeploymentList) (ctrl.Result, error) {
+	err := reconciler.List(ctx, getMatchingDeploys)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -84,7 +82,7 @@ func (reconciler *IdleOperatorReconciler) getAllClusterDeploys(ctx context.Conte
 }
 
 func (reconciler *IdleOperatorReconciler) buildCRStatus(ctx context.Context, clusterDeploys []appsv1.Deployment,
-	idlingCR *cachev1alpha1.IdleOperator, label map[string]string) (ctrl.Result, error) {
+	idlingCR *cachev1alpha1.IdleOperator) (ctrl.Result, error) {
 	for _, clusterDeploy := range clusterDeploys {
 		alreadyInStatus := false
 		for i, statusDep := range idlingCR.Status.Deployments {
@@ -94,9 +92,6 @@ func (reconciler *IdleOperatorReconciler) buildCRStatus(ctx context.Context, clu
 				if *clusterDeploy.Spec.Replicas != 0 {
 					statusDep.Size = *clusterDeploy.Spec.Replicas
 				}
-				if statusDep.Phase == "unidle" {
-					statusDep.Phase = "idle"
-				}
 				idlingCR.Status.Deployments[i] = statusDep
 			}
 		}
@@ -104,7 +99,6 @@ func (reconciler *IdleOperatorReconciler) buildCRStatus(ctx context.Context, clu
 			var newStatusDeploy cachev1alpha1.Deploy
 			newStatusDeploy.Name = clusterDeploy.ObjectMeta.Name
 			newStatusDeploy.Size = *clusterDeploy.Spec.Replicas
-			newStatusDeploy.Phase = "idle"
 			newStatusDeploy.Tested = true
 			idlingCR.Status.Deployments = append(idlingCR.Status.Deployments, newStatusDeploy)
 		}
@@ -138,56 +132,57 @@ func (reconciler *IdleOperatorReconciler) givePodsToDeploys(ctx context.Context,
 }
 
 func (reconciler *IdleOperatorReconciler) manageIdling(ctx context.Context,
-	IdlingCR cachev1alpha1.IdleOperator, idling_type string) (ctrl.Result, error) {
-	for i, statusDep := range IdlingCR.Status.Deployments {
+	idlingCR cachev1alpha1.IdleOperator) (ctrl.Result, error) {
+	for i, statusDep := range idlingCR.Status.Deployments {
 		statusDep.Tested = false
-		IdlingCR.Status.Deployments[i] = statusDep
+		idlingCR.Status.Deployments[i] = statusDep
 	}
-	idling_spec := IdlingCR.Spec.Idle
+	idling_spec := idlingCR.Spec.Idle
+	getAllMatchingDeploys := &appsv1.DeploymentList{}
 	for _, depSpecs := range idling_spec {
-		for _, label := range depSpecs.MatchingLabels {
-			getMatchingDeploys := &appsv1.DeploymentList{}
-			res, err := reconciler.getDeploysFromLabel(ctx, getMatchingDeploys, IdlingCR.Namespace, label)
-			if err != nil {
-				return res, err
-			}
-			startIdling, err := CronManagment.InTimezoneOrNot(depSpecs.Time, depSpecs.Duration)
-			if err != nil {
-				return ctrl.Result{}, err
-			}
-			if startIdling {
-				reconciler.buildCRStatus(ctx, getMatchingDeploys.Items, &IdlingCR, label)
+		startIdling, err := CronManagment.InTimezoneOrNot(depSpecs.Time, depSpecs.Duration)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if startIdling {
+			getMatchingDeploysFromLabel := &appsv1.DeploymentList{}
+			for _, label := range depSpecs.MatchingLabels {
+				res, err := reconciler.getDeploysFromLabelAndNamespace(ctx, getMatchingDeploysFromLabel, label, depSpecs.Namespace)
+				if err != nil {
+					return res, err
+				}
+				getAllMatchingDeploys.Items = append(getAllMatchingDeploys.Items, getMatchingDeploysFromLabel.Items...)
 			}
 		}
 	}
-	getAllDeploys := &appsv1.DeploymentList{}
-	res, err := reconciler.getAllClusterDeploys(ctx, getAllDeploys, IdlingCR.Namespace)
+	reconciler.buildCRStatus(ctx, getAllMatchingDeploys.Items, &idlingCR)
+	allClusterDeploys := &appsv1.DeploymentList{}
+	res, err := reconciler.getAllClusterDeploys(ctx, allClusterDeploys)
 	if err != nil {
 		return res, err
 	}
-	res, err = reconciler.givePodsToDeploys(ctx, getAllDeploys.Items, &IdlingCR)
+	res, err = reconciler.givePodsToDeploys(ctx, allClusterDeploys.Items, &idlingCR)
 	if err != nil {
 		return res, err
 	}
 	return ctrl.Result{}, nil
-
 }
 
 func (reconciler *IdleOperatorReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = log.FromContext(ctx)
-	var IdlingCR cachev1alpha1.IdleOperator
-	err := reconciler.Get(ctx, types.NamespacedName{Name: req.Name, Namespace: req.Namespace}, &IdlingCR)
+	_ = oplog.FromContext(ctx)
+	var idlingCR cachev1alpha1.IdleOperator
+	err := reconciler.Get(ctx, types.NamespacedName{Name: req.Name, Namespace: req.Namespace}, &idlingCR)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
 	}
-	res, err := reconciler.manageIdling(ctx, IdlingCR, "idle")
+	res, err := reconciler.manageIdling(ctx, idlingCR)
 	if err != nil {
 		return res, err
 	}
-	watchCRStatus(IdlingCR.Status.Deployments)
+	watchCRStatus(idlingCR.Status.Deployments)
 	return ctrl.Result{}, nil
 }
 

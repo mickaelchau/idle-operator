@@ -51,11 +51,14 @@ spec:
                           type: string
                         type: object
                       type: array
+                    namespace:
+                      type: string
                     time:
                       type: string
                   required:
                   - duration
                   - matchLabels
+                  - namespace
                   - time
                   type: object
                 type: array
@@ -74,8 +77,6 @@ spec:
                   properties:
                     name:
                       type: string
-                    phase:
-                      type: string
                     size:
                       format: int32
                       type: integer
@@ -83,7 +84,6 @@ spec:
                       type: boolean
                   required:
                   - name
-                  - phase
                   - size
                   - tested
                   type: object

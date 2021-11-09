@@ -29,10 +29,10 @@ type IdlingSpecs struct {
 	Duration       string              `json:"duration"`
 	Namespace      string              `json:"namespace"`
 }
-type Deploy struct {
-	Name   string `json:"name"`
-	Size   int32  `json:"size"`
-	Tested bool   `json:"tested"`
+type StatusDeployment struct {
+	Name    string `json:"name"`
+	Size    int32  `json:"size"`
+	IsIdled bool   `json:"isIdled"`
 }
 
 // IddleDeployFromCrontableSpec defines the desired state of IddleDeployFromCrontable
@@ -47,7 +47,7 @@ type IdleOperatorSpec struct {
 type IdleOperatorStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
-	Deployments []Deploy `json:"deploys"` //dictionary
+	StatusDeployments []StatusDeployment `json:"deployments"` //dictionary
 }
 
 //+kubebuilder:object:root=true

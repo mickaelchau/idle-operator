@@ -7,7 +7,7 @@ You may obtain a copy of the License at
 
     http://www.apache.org/licenses/LICENSE-2.0
 
-Unless required by applicable law or agreed to in writing, software
+Unless requestuired by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
@@ -19,9 +19,8 @@ package controllers
 import (
 	"context"
 
-	"log"
-
-	CronManagment "github.com/mickaelchau/new-operator/controllers/cron_managment"
+	cronmanagment "github.com/mickaelchau/new-operator/controllers/cron_managment"
+	"github.com/sirupsen/logrus"
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -52,143 +51,174 @@ type IdleOperatorReconciler struct {
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.9.2/pkg/reconcile
-func watchCRStatus(Deployments []cachev1alpha1.Deploy) {
-	log.Println("Deployments Status")
-	for _, statsusDep := range Deployments {
-		log.Println("name:", statsusDep.Name, "replicas:", statsusDep.Size, "tested:", statsusDep.Tested)
+func watchCRStatus(Deployments []cachev1alpha1.StatusDeployment) {
+	logrus.Info("Deployments Status")
+	for _, statusDeployment := range Deployments {
+		logrus.Infoln("Name =", statusDeployment.Name, "| Size =", statusDeployment.Size, "| Isdled =",
+			statusDeployment.IsIdled)
 	}
 }
 
-func (reconciler *IdleOperatorReconciler) getDeploysFromLabelAndNamespace(ctx context.Context,
+func (reconciler *IdleOperatorReconciler) getDeploysFromLabelAndNamespace(context context.Context,
 	getMatchingDeploys *appsv1.DeploymentList, label map[string]string, namespace string) (ctrl.Result, error) {
 	options := []client.ListOption{
 		client.InNamespace(namespace),
 		client.MatchingLabels(label),
 	}
-	err := reconciler.List(ctx, getMatchingDeploys, options...)
+	err := reconciler.List(context, getMatchingDeploys, options...)
 	if err != nil {
+		logrus.Fatalln("Failed to list Deployments (with namespace & label):", err)
 		return ctrl.Result{}, err
 	}
 	return ctrl.Result{}, nil
 }
 
-func (reconciler *IdleOperatorReconciler) getAllClusterDeploys(ctx context.Context,
+func (reconciler *IdleOperatorReconciler) getAllClusterDeploys(context context.Context,
 	getMatchingDeploys *appsv1.DeploymentList) (ctrl.Result, error) {
-	err := reconciler.List(ctx, getMatchingDeploys)
+	err := reconciler.List(context, getMatchingDeploys)
 	if err != nil {
+		logrus.Fatalln("Failed to list all deployments of cluster:", err)
 		return ctrl.Result{}, err
 	}
 	return ctrl.Result{}, nil
 }
 
-func (reconciler *IdleOperatorReconciler) buildCRStatus(ctx context.Context, clusterDeploys []appsv1.Deployment,
+func (reconciler *IdleOperatorReconciler) buildCRStatus(context context.Context, clusterDeployments []appsv1.Deployment,
 	idlingCR *cachev1alpha1.IdleOperator) (ctrl.Result, error) {
-	for _, clusterDeploy := range clusterDeploys {
-		alreadyInStatus := false
-		for i, statusDep := range idlingCR.Status.Deployments {
-			if statusDep.Name == clusterDeploy.ObjectMeta.Name {
-				alreadyInStatus = true
-				statusDep.Tested = true
-				if *clusterDeploy.Spec.Replicas != 0 {
-					statusDep.Size = *clusterDeploy.Spec.Replicas
+	isStatusChanged := false
+	for _, clusterDeployment := range clusterDeployments {
+		isalreadyInStatus := false
+		for index, statusDeployment := range idlingCR.Status.StatusDeployments {
+			if statusDeployment.Name == clusterDeployment.ObjectMeta.Name {
+				if !isStatusChanged {
+					isStatusChanged = true
 				}
-				idlingCR.Status.Deployments[i] = statusDep
+				isalreadyInStatus = true
+				statusDeployment.IsIdled = true
+				if *clusterDeployment.Spec.Replicas != 0 {
+					statusDeployment.Size = *clusterDeployment.Spec.Replicas
+				}
+				idlingCR.Status.StatusDeployments[index] = statusDeployment
 			}
 		}
-		if !alreadyInStatus {
-			var newStatusDeploy cachev1alpha1.Deploy
-			newStatusDeploy.Name = clusterDeploy.ObjectMeta.Name
-			newStatusDeploy.Size = *clusterDeploy.Spec.Replicas
-			newStatusDeploy.Tested = true
-			idlingCR.Status.Deployments = append(idlingCR.Status.Deployments, newStatusDeploy)
+		if !isalreadyInStatus {
+			if !isStatusChanged {
+				isStatusChanged = true
+			}
+			var newStatusDeployment cachev1alpha1.StatusDeployment
+			newStatusDeployment.Name = clusterDeployment.ObjectMeta.Name
+			newStatusDeployment.Size = *clusterDeployment.Spec.Replicas
+			newStatusDeployment.IsIdled = true
+			idlingCR.Status.StatusDeployments = append(idlingCR.Status.StatusDeployments, newStatusDeployment)
 		}
 	}
-	err := reconciler.Status().Update(ctx, idlingCR)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	return ctrl.Result{}, nil
-}
-
-func (reconciler *IdleOperatorReconciler) givePodsToDeploys(ctx context.Context, clusterDeploys []appsv1.Deployment,
-	idlingCR *cachev1alpha1.IdleOperator) (ctrl.Result, error) {
-	for _, statusDep := range idlingCR.Status.Deployments {
-		for _, clusterDep := range clusterDeploys {
-			if clusterDep.Name == statusDep.Name {
-				if !statusDep.Tested {
-					clusterDep.Spec.Replicas = &statusDep.Size
-				}
-				if statusDep.Tested {
-					*clusterDep.Spec.Replicas = 0
-				}
-				err := reconciler.Update(ctx, &clusterDep)
-				if err != nil {
-					return ctrl.Result{}, err
-				}
-			}
+	if isStatusChanged {
+		err := reconciler.Status().Update(context, idlingCR)
+		if err != nil {
+			logrus.Fatalln("Update status failed:", err)
+			return ctrl.Result{}, err
 		}
 	}
 	return ctrl.Result{}, nil
 }
 
-func (reconciler *IdleOperatorReconciler) manageIdling(ctx context.Context,
+func (reconciler *IdleOperatorReconciler) updateDeployments(context context.Context, clusterDeployments []appsv1.Deployment,
+	idlingCR *cachev1alpha1.IdleOperator) (ctrl.Result, error) {
+	for _, statusDeployment := range idlingCR.Status.StatusDeployments {
+		for _, clusterDeployment := range clusterDeployments {
+			isclusterDeploymentChanged := false
+			if clusterDeployment.Name == statusDeployment.Name {
+				if !statusDeployment.IsIdled && *clusterDeployment.Spec.Replicas != statusDeployment.Size {
+					clusterDeployment.Spec.Replicas = &statusDeployment.Size
+					isclusterDeploymentChanged = true
+				}
+				if statusDeployment.IsIdled && *clusterDeployment.Spec.Replicas != 0 {
+					*clusterDeployment.Spec.Replicas = 0
+					isclusterDeploymentChanged = true
+				}
+				if isclusterDeploymentChanged {
+					err := reconciler.Update(context, &clusterDeployment)
+					if err != nil {
+						logrus.Fatalln("Update deployment failed:", err)
+						return ctrl.Result{}, err
+					}
+				}
+			}
+		}
+	}
+	return ctrl.Result{}, nil
+}
+
+func (reconciler *IdleOperatorReconciler) manageIdling(context context.Context,
 	idlingCR cachev1alpha1.IdleOperator) (ctrl.Result, error) {
-	for i, statusDep := range idlingCR.Status.Deployments {
-		statusDep.Tested = false
-		idlingCR.Status.Deployments[i] = statusDep
+	for index, statusDeployment := range idlingCR.Status.StatusDeployments {
+		statusDeployment.IsIdled = false
+		idlingCR.Status.StatusDeployments[index] = statusDeployment
 	}
 	idling_spec := idlingCR.Spec.Idle
 	getAllMatchingDeploys := &appsv1.DeploymentList{}
 	for _, depSpecs := range idling_spec {
-		startIdling, err := CronManagment.InTimezoneOrNot(depSpecs.Time, depSpecs.Duration)
+		startIdling, err := cronmanagment.IsInTimezone(depSpecs.Time, depSpecs.Duration)
 		if err != nil {
+			logrus.Fatalln("Failed to know if idling or not:", err)
 			return ctrl.Result{}, err
 		}
 		if startIdling {
 			getMatchingDeploysFromLabel := &appsv1.DeploymentList{}
 			for _, label := range depSpecs.MatchingLabels {
-				res, err := reconciler.getDeploysFromLabelAndNamespace(ctx, getMatchingDeploysFromLabel, label, depSpecs.Namespace)
+				reconcileResult, err := reconciler.getDeploysFromLabelAndNamespace(context, getMatchingDeploysFromLabel,
+					label, depSpecs.Namespace)
+				logrus.Infoln("label:", label, "is mapped")
 				if err != nil {
-					return res, err
+					logrus.Fatalln("Failed to get deployments:", err)
+					return reconcileResult, err
 				}
 				getAllMatchingDeploys.Items = append(getAllMatchingDeploys.Items, getMatchingDeploysFromLabel.Items...)
 			}
 		}
 	}
-	reconciler.buildCRStatus(ctx, getAllMatchingDeploys.Items, &idlingCR)
+	reconciler.buildCRStatus(context, getAllMatchingDeploys.Items, &idlingCR)
 	allClusterDeploys := &appsv1.DeploymentList{}
-	res, err := reconciler.getAllClusterDeploys(ctx, allClusterDeploys)
+	reconcileResult, err := reconciler.getAllClusterDeploys(context, allClusterDeploys)
 	if err != nil {
-		return res, err
+		logrus.Fatalln("Failed to get deployments:", err)
+		return reconcileResult, err
 	}
-	res, err = reconciler.givePodsToDeploys(ctx, allClusterDeploys.Items, &idlingCR)
+	reconcileResult, err = reconciler.updateDeployments(context, allClusterDeploys.Items, &idlingCR)
 	if err != nil {
-		return res, err
+		logrus.Fatalln("Failed to update cluster deployments:", err)
+		return reconcileResult, err
 	}
 	return ctrl.Result{}, nil
 }
 
-func (reconciler *IdleOperatorReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = oplog.FromContext(ctx)
+func (reconciler *IdleOperatorReconciler) Reconcile(context context.Context, request ctrl.Request) (ctrl.Result, error) {
+	_ = oplog.FromContext(context)
 	var idlingCR cachev1alpha1.IdleOperator
-	err := reconciler.Get(ctx, types.NamespacedName{Name: req.Name, Namespace: req.Namespace}, &idlingCR)
+	err := reconciler.Get(context, types.NamespacedName{
+		Name:      request.Name,
+		Namespace: request.Namespace,
+	}, &idlingCR)
+	if errors.IsNotFound(err) {
+		logrus.Info("Custom Resource not found in the cluster at the namespace:", request.Namespace, err)
+		return ctrl.Result{}, nil
+	}
 	if err != nil {
-		if errors.IsNotFound(err) {
-			return ctrl.Result{}, nil
-		}
+		logrus.Fatalln("Failed to get Custom Resource:", err)
 		return ctrl.Result{}, err
 	}
-	res, err := reconciler.manageIdling(ctx, idlingCR)
+	reconcileResult, err := reconciler.manageIdling(context, idlingCR)
 	if err != nil {
-		return res, err
+		logrus.Fatalln("Something goes wrong while idling:", err)
+		return reconcileResult, err
 	}
-	watchCRStatus(idlingCR.Status.Deployments)
+	watchCRStatus(idlingCR.Status.StatusDeployments)
 	return ctrl.Result{}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (reconciler *IdleOperatorReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+func (reconciler *IdleOperatorReconciler) SetupWithManager(manager ctrl.Manager) error {
+	return ctrl.NewControllerManagedBy(manager).
 		For(&cachev1alpha1.IdleOperator{}).
 		Owns(&appsv1.Deployment{}).
 		Complete(reconciler)

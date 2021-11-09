@@ -69,27 +69,27 @@ spec:
             description: IddleDeployFromCrontableStatus defines the observed state
               of IddleDeployFromCrontable
             properties:
-              deploys:
+              deployments:
                 description: 'INSERT ADDITIONAL STATUS FIELD - define observed state
                   of cluster Important: Run "make" to regenerate code after modifying
                   this file'
                 items:
                   properties:
+                    isIdled:
+                      type: boolean
                     name:
                       type: string
                     size:
                       format: int32
                       type: integer
-                    tested:
-                      type: boolean
                   required:
+                  - isIdled
                   - name
                   - size
-                  - tested
                   type: object
                 type: array
             required:
-            - deploys
+            - deployments
             type: object
         type: object
     served: true

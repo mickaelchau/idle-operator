@@ -1,20 +1,24 @@
 apiVersion: cache.mickaelchau.fr/v1alpha1
 kind: IdleOperator
 metadata:
-  namespace: default
-  name: idling-for-default
+  namespace: ttt
+  name: idling-for-ttt
 spec:
   idle:
     - matchLabels:
       - app: label1
-      - tira: label2s
-      time: 0 8 * * 1-5
+      - tira: label2
+      time: 0* * 1-5
       duration: 10h
     - matchLabels:
       - app: label1cd
       time: 0 8 * * 1-5
+      duration: xx
+    - matchLabels:
+      - test: saucisses
+      time: 0 8 * * 1-5
       duration: 10h
     - matchLabels:
-      - test: saucisse
+      - manger: froidx
       time: 0 8 * * 1-5
       duration: 10h

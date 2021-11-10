@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: deploy4
+  namespace: ttt
   labels:
     manger: froid
 spec:

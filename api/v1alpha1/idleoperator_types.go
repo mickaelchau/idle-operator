@@ -27,8 +27,8 @@ type IdlingSpecs struct {
 	MatchingLabels []map[string]string `json:"matchLabels"`
 	Time           string              `json:"time"`
 	Duration       string              `json:"duration"`
-	Namespace      string              `json:"namespace"`
 }
+
 type StatusDeployment struct {
 	Name    string `json:"name"`
 	Size    int32  `json:"size"`

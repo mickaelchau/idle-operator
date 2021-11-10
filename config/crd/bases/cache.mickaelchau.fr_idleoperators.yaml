@@ -51,14 +51,11 @@ spec:
                           type: string
                         type: object
                       type: array
-                    namespace:
-                      type: string
                     time:
                       type: string
                   required:
                   - duration
                   - matchLabels
-                  - namespace
                   - time
                   type: object
                 type: array

@@ -18,19 +18,15 @@ package controllers
 
 import (
 	"context"
-	"fmt"
 
 	cronmanagment "github.com/mickaelchau/new-operator/controllers/cron_managment"
 	"github.com/sirupsen/logrus"
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
 	oplog "sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	cachev1alpha1 "github.com/mickaelchau/new-operator/api/v1alpha1"
 )
@@ -54,8 +50,8 @@ type IdleOperatorReconciler struct {
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.9.2/pkg/reconcile
-func watchCRStatus(Deployments []cachev1alpha1.StatusDeployment) {
-	logrus.Info("Deployments Status")
+func watchCRStatus(Deployments []cachev1alpha1.StatusDeployment, namespace string) {
+	logrus.Infof("Deployments Status of Namespace: %s", namespace)
 	for _, statusDeployment := range Deployments {
 		logrus.Infof("Name = %s | Size = %d | Isdled = %t", statusDeployment.Name,
 			statusDeployment.Size, statusDeployment.IsIdled)
@@ -77,7 +73,7 @@ func (reconciler *IdleOperatorReconciler) injectDeploymentsFromLabelAndNamespace
 		return err
 	}
 	for _, dep := range matchingDeployments.Items {
-		fmt.Println(dep.Name)
+		logrus.Infoln(dep.Name)
 	}
 	return nil
 }
@@ -175,10 +171,11 @@ func (reconciler *IdleOperatorReconciler) manageIdling(context context.Context,
 		if isStartIdling {
 			matchingDeploymentsFromLabel := &appsv1.DeploymentList{}
 			err := reconciler.injectDeploymentsFromLabelAndNamespace(context, matchingDeploymentsFromLabel,
-				depSpecs.MatchingLabels, depSpecs.Namespace)
+				depSpecs.MatchingLabels, idlingCR.Namespace)
 			//logrus.Infoln("labels:", depSpecs.MatchingLabels, "are mapped")
 			if err != nil {
-				logrus.Errorln("Failed to get deployments for labels %s and namespace %s: %s", depSpecs.MatchingLabels, depSpecs.Namespace, err)
+				logrus.Errorf("Failed to get deployments for labels %s and namespace %s: %s", depSpecs.MatchingLabels,
+					idlingCR.Namespace, err)
 			}
 			allMatchingDeployments.Items = append(allMatchingDeployments.Items, matchingDeploymentsFromLabel.Items...)
 		}
@@ -200,25 +197,24 @@ func (reconciler *IdleOperatorReconciler) manageIdling(context context.Context,
 
 func (reconciler *IdleOperatorReconciler) Reconcile(context context.Context, request ctrl.Request) (ctrl.Result, error) {
 	_ = oplog.FromContext(context)
-	var idlingCR cachev1alpha1.IdleOperator
-	err := reconciler.Get(context, types.NamespacedName{
-		Name:      request.Name,
-		Namespace: request.Namespace,
-	}, &idlingCR)
+	var allNamespaceIdlingCR cachev1alpha1.IdleOperatorList
+	err := reconciler.List(context, &allNamespaceIdlingCR)
 	if errors.IsNotFound(err) {
-		logrus.Infoln("Custom Resource not found in the cluster at the namespace %s: %s", request.Namespace, err)
+		logrus.Infof("Custom Resource not found in the cluster at the namespace %s: %s", request.Namespace, err)
 		return ctrl.Result{}, nil
 	}
 	if err != nil {
-		logrus.Errorln("Failed to get Custom Resource:", err)
+		logrus.Errorln("Failed to List all Custom Resource:", err)
 		return ctrl.Result{}, err
 	}
-	err = reconciler.manageIdling(context, idlingCR)
-	if err != nil {
-		logrus.Errorln("Something goes wrong while idling:", err)
-		return ctrl.Result{}, err
+	for _, idlingCR := range allNamespaceIdlingCR.Items {
+		err = reconciler.manageIdling(context, idlingCR)
+		if err != nil {
+			logrus.Errorln("Something goes wrong while idling:", err)
+			return ctrl.Result{}, err
+		}
+		watchCRStatus(idlingCR.Status.StatusDeployments, idlingCR.Namespace)
 	}
-	watchCRStatus(idlingCR.Status.StatusDeployments)
 	return ctrl.Result{}, nil
 }
 
@@ -226,7 +222,7 @@ func (reconciler *IdleOperatorReconciler) Reconcile(context context.Context, req
 func (reconciler *IdleOperatorReconciler) SetupWithManager(manager ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(manager).
 		For(&cachev1alpha1.IdleOperator{}).
-		Watches(&source.Kind{Type: &appsv1.Deployment{}}, &handler.EnqueueRequestForOwner{OwnerType: &cachev1alpha1.IdleOperator{}, IsController: true}).
-		//Owns(&appsv1.Deployment{}).
+		//Watches(&source.Kind{Type: &appsv1.Deployment{}}, &handler.EnqueueRequestForOwner{OwnerType: &cachev1alpha1.IdleOperator{}, IsController: true}).
+		Owns(&appsv1.Deployment{}).
 		Complete(reconciler)
 }

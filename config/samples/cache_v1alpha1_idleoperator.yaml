@@ -5,13 +5,18 @@ metadata:
 spec:
   idle:
     - matchLabels:
-      - app: label2
       - app: label1
-      time: 0 16 * * 1-5
+      - tira: label2d
+      time: 0 8 * * 1-5
       duration: 10h
       namespace: default
     - matchLabels:
-      - test: saucissett
-      time: 0 16 * * 1-5
+      - app: label1c
+      time: 0 8 * * 1-5
+      duration: 10h
+      namespace: default
+    - matchLabels:
+      - test: saucissex
+      time: 0 8 * * 1-5
       duration: 10h
       namespace: ttt

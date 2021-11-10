@@ -1,21 +1,18 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: toto
+  name: deploy4
   labels:
-    app: label1
-    tira: label2
+    manger: froid
 spec:
-  replicas: 5
+  replicas: 2
   selector:
     matchLabels:
-      app: label1
-      tira: label2
+      manger: froid
   template:
     metadata:
       labels:
-        app: label1
-        tira: label2
+        manger: froid
     spec:
       containers:
       - name: nginx

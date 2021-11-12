@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 
 	cronmanagment "github.com/mickaelchau/new-operator/controllers/cron_managment"
 	"github.com/sirupsen/logrus"
@@ -137,10 +138,11 @@ func (reconciler *IdleOperatorReconciler) updateDeployment(context context.Conte
 	statusDeployment, isInStatus := statusDeployments[clusterDeployment.ObjectMeta.Name]
 	if isInStatus {
 		if !statusDeployment.IsIdled {
+			fmt.Println("la?")
 			if !*haveToDelete {
 				*haveToDelete = true
 			}
-			clusterDeployment.Spec.Replicas = &statusDeployment.Size
+			*clusterDeployment.Spec.Replicas = statusDeployment.Size
 			hasClusterDeploymentChanged = true
 		}
 		if statusDeployment.IsIdled && *clusterDeployment.Spec.Replicas != 0 {
@@ -192,6 +194,7 @@ func (reconciler *IdleOperatorReconciler) manageIdling(context context.Context,
 	}
 	idlingSpec := idlingCR.Spec.Idle
 	allMatchingDeployments := &appsv1.DeploymentList{}
+	timeMatchingDeployments := &appsv1.DeploymentList{}
 	for _, depSpecs := range idlingSpec {
 		matchingDeploymentsFromLabels := &appsv1.DeploymentList{}
 		err := reconciler.injectDeploymentsFromLabelAndNamespace(context, depSpecs.MatchingLabels, idlingCR.Namespace,
@@ -207,13 +210,13 @@ func (reconciler *IdleOperatorReconciler) manageIdling(context context.Context,
 		}
 		if isStartIdling {
 			logrus.Infof("Deployments match timezone")
-			allMatchingDeployments.Items = append(allMatchingDeployments.Items, matchingDeploymentsFromLabels.Items...)
 			/*
 				err = reconciler.buildCRStatus(context, matchingDeploymentsFromLabels.Items, &idlingCR)
 				if err != nil {
 					logrus.Errorf("Fail to build CR Status: %s", err.Error())
 				}
 			*/
+			timeMatchingDeployments.Items = append(timeMatchingDeployments.Items, matchingDeploymentsFromLabels.Items...)
 		} else {
 			logrus.Infof("Deployments does not match timezone")
 		}
@@ -224,8 +227,9 @@ func (reconciler *IdleOperatorReconciler) manageIdling(context context.Context,
 				return err
 			}
 		*/
+		allMatchingDeployments.Items = append(allMatchingDeployments.Items, matchingDeploymentsFromLabels.Items...)
 	}
-	err := reconciler.buildCRStatus(context, allMatchingDeployments.Items, &idlingCR)
+	err := reconciler.buildCRStatus(context, timeMatchingDeployments.Items, &idlingCR)
 	if err != nil {
 		logrus.Errorf("Fail to build CR Status: %s", err.Error())
 	}

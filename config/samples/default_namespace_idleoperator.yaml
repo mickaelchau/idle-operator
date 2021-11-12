@@ -9,7 +9,7 @@ spec:
       - app: label1
       - tira: label2
       time: 0 8 * * 1-5
-      duration: 3h
+      duration: 10h
     - matchLabels:
       - app: label1
       time: 0 8 * * 1-5

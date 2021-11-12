@@ -1,0 +1,12 @@
+Algorithm of Operator:
+- For each clusterDeployment that matches Labels
+    - if match(clusterDeployment, timeFrame) 
+        - if clusterDeployment.Replicas != 0
+            -> statusDeployment.Replicas = clusterDeployment.Replicas
+            -> clusterDeployment.Replicas = 0
+    - else 
+        - if statusDeployment
+            -> clusterDeployment.Replicas = statusDeployment.Replicas
+            -> delete(statusDeployment)
+
+If a new deployment that matches labels is deployed => poweroff

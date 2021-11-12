@@ -50,10 +50,10 @@ type IdleOperatorReconciler struct {
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.9.2/pkg/reconcile
-func watchCRStatus(statusDeployments []cachev1alpha1.StatusDeployment, namespace string) {
+func watchCRStatus(statusDeployments map[string]cachev1alpha1.StatusDeployment, namespace string) {
 	logrus.Infof("Deployments Status of Namespace: %s", namespace)
-	for _, statusDeployment := range statusDeployments {
-		logrus.Infof("Name = %s | Size = %d | Isdled = %t", statusDeployment.Name,
+	for name, statusDeployment := range statusDeployments {
+		logrus.Infof("Name = %s | Size = %d | Isdled = %t", name,
 			statusDeployment.Size, statusDeployment.IsIdled)
 	}
 }
@@ -75,7 +75,6 @@ func (reconciler *IdleOperatorReconciler) injectDeploymentsFromLabelAndNamespace
 	}
 	logrus.Infof("Injecting deployments with options: %+v", optionsForList)
 	err := reconciler.List(context, matchingDeployments, optionsForList...)
-
 	if err != nil {
 		logrus.Errorf("Failed to list Deployments (with namespace & label): %s", err.Error())
 		return err
@@ -87,74 +86,58 @@ func (reconciler *IdleOperatorReconciler) injectDeploymentsFromLabelAndNamespace
 func (reconciler *IdleOperatorReconciler) buildCRStatus(context context.Context, clusterDeployments []appsv1.Deployment,
 	idlingCR *cachev1alpha1.IdleOperator) error {
 	haveStatusChanged := false
+	statusDeployments := idlingCR.Status.StatusDeployments
 	for _, clusterDeployment := range clusterDeployments {
-		isAlreadyInStatus := false
-		for index, statusDeployment := range idlingCR.Status.StatusDeployments {
-			if statusDeployment.Name == clusterDeployment.ObjectMeta.Name {
-				logrus.Infof("already a deployment of name: %s", statusDeployment.Name)
-				if !haveStatusChanged {
-					haveStatusChanged = true
-				}
-				isAlreadyInStatus = true
-				if *clusterDeployment.Spec.Replicas != 0 {
-					statusDeployment.Size = *clusterDeployment.Spec.Replicas
-				} else {
-					statusDeployment.IsIdled = true
-				}
-				idlingCR.Status.StatusDeployments[index] = statusDeployment
-			}
+		if !haveStatusChanged {
+			haveStatusChanged = true
 		}
-		if !isAlreadyInStatus {
-			logrus.Infof("No deployment of name %s", clusterDeployment.ObjectMeta.Name)
-			if !haveStatusChanged {
-				haveStatusChanged = true
+		if statusDeployment, isInStatus := statusDeployments[clusterDeployment.ObjectMeta.Name]; isInStatus {
+			logrus.Infof("already a deployment of name: %s", clusterDeployment.ObjectMeta.Name)
+			if *clusterDeployment.Spec.Replicas != 0 {
+				statusDeployment.Size = *clusterDeployment.Spec.Replicas
+			} else {
+				statusDeployment.IsIdled = true
 			}
+			idlingCR.Status.StatusDeployments[clusterDeployment.ObjectMeta.Name] = statusDeployment
+		} else {
+			logrus.Infof("No deployment of name %s", clusterDeployment.ObjectMeta.Name)
 			var newStatusDeployment cachev1alpha1.StatusDeployment
-			newStatusDeployment.Name = clusterDeployment.ObjectMeta.Name
 			newStatusDeployment.Size = *clusterDeployment.Spec.Replicas
 			newStatusDeployment.IsIdled = true
-			idlingCR.Status.StatusDeployments = append(idlingCR.Status.StatusDeployments, newStatusDeployment)
+			idlingCR.Status.StatusDeployments[clusterDeployment.ObjectMeta.Name] = newStatusDeployment
 		}
 	}
 	if haveStatusChanged {
 		err := reconciler.Status().Update(context, idlingCR)
 		if err != nil {
-			logrus.Errorf("Update status failed: %s", err.Error())
+			logrus.Errorf("Update status failed in build cr: %s", err.Error())
 			return err
 		}
 	}
 	return nil
 }
 
-func removeIndexFromStatusDeployments(slice []cachev1alpha1.StatusDeployment, index int) []cachev1alpha1.StatusDeployment {
-	if len(slice) > 0 {
-		return append(slice[:index], slice[index+1:]...)
-	}
-	return nil
-}
-
 func (reconciler *IdleOperatorReconciler) updateDeployment(context context.Context, idlingCR *cachev1alpha1.IdleOperator,
-	clusterDeployment appsv1.Deployment, indexToDelete *int) error {
-	for index, statusDeployment := range idlingCR.Status.StatusDeployments {
-		isClusterDeploymentChanged := false
-		if clusterDeployment.Name == statusDeployment.Name {
-			if !statusDeployment.IsIdled {
-				if *indexToDelete == -1 {
-					*indexToDelete = index
-				}
-				clusterDeployment.Spec.Replicas = &statusDeployment.Size
-				isClusterDeploymentChanged = true
+	clusterDeployment appsv1.Deployment, haveToDelete *bool) error {
+	isClusterDeploymentChanged := false
+	statusDeployments := idlingCR.Status.StatusDeployments
+	if statusDeployment, isInStatus := statusDeployments[clusterDeployment.ObjectMeta.Name]; isInStatus {
+		if !statusDeployment.IsIdled {
+			if !*haveToDelete {
+				*haveToDelete = true
 			}
-			if statusDeployment.IsIdled && *clusterDeployment.Spec.Replicas != 0 {
-				*clusterDeployment.Spec.Replicas = 0
-				isClusterDeploymentChanged = true
-			}
-			if isClusterDeploymentChanged {
-				err := reconciler.Update(context, &clusterDeployment)
-				if err != nil {
-					logrus.Errorf("Update deployment: %s in namespace %s failed: %s",
-						clusterDeployment.Name, idlingCR.Namespace, err.Error())
-				}
+			clusterDeployment.Spec.Replicas = &statusDeployment.Size
+			isClusterDeploymentChanged = true
+		}
+		if statusDeployment.IsIdled && *clusterDeployment.Spec.Replicas != 0 {
+			*clusterDeployment.Spec.Replicas = 0
+			isClusterDeploymentChanged = true
+		}
+		if isClusterDeploymentChanged {
+			err := reconciler.Update(context, &clusterDeployment)
+			if err != nil {
+				logrus.Errorf("Update deployment: %s in namespace %s failed: %s",
+					clusterDeployment.Name, idlingCR.Namespace, err.Error())
 			}
 		}
 	}
@@ -163,22 +146,25 @@ func (reconciler *IdleOperatorReconciler) updateDeployment(context context.Conte
 
 func (reconciler *IdleOperatorReconciler) updateDeployments(context context.Context, clusterDeployments []appsv1.Deployment,
 	idlingCR *cachev1alpha1.IdleOperator) error {
-	isStatusChanged := false
+	haveStatusChanged := false
 	for _, clusterDeployment := range clusterDeployments {
-		indexToDelete := -1
-		reconciler.updateDeployment(context, idlingCR, clusterDeployment, &indexToDelete)
-		if indexToDelete != -1 {
-			idlingCR.Status.StatusDeployments = removeIndexFromStatusDeployments(idlingCR.Status.StatusDeployments, indexToDelete)
-			if !isStatusChanged {
-				isStatusChanged = true
+		haveToDelete := false
+		reconciler.updateDeployment(context, idlingCR, clusterDeployment, &haveToDelete)
+		if haveToDelete {
+			delete(idlingCR.Status.StatusDeployments, clusterDeployment.ObjectMeta.Name)
+			if len(idlingCR.Status.StatusDeployments) == 0 {
+				idlingCR.Status.StatusDeployments = map[string]cachev1alpha1.StatusDeployment{}
 			}
-			if isStatusChanged {
-				err := reconciler.Status().Update(context, idlingCR)
-				if err != nil {
-					logrus.Errorf("Update status failed: %s", err.Error())
-					return err
-				}
+			if !haveStatusChanged {
+				haveStatusChanged = true
 			}
+		}
+	}
+	if haveStatusChanged {
+		err := reconciler.Status().Update(context, idlingCR)
+		if err != nil {
+			logrus.Errorf("Update status failed in update: %s", err.Error())
+			return err
 		}
 	}
 	return nil
@@ -220,12 +206,14 @@ func (reconciler *IdleOperatorReconciler) manageIdling(context context.Context,
 		logrus.Errorf("Failed to inject deployments: %s", err.Error())
 		return err
 	}
+	//return nil
 	err = reconciler.updateDeployments(context, allClusterDeployments.Items, &idlingCR)
 	if err != nil {
 		logrus.Errorf("Failed to update cluster deployments: %s", err.Error())
 		return err
 	}
 	return nil
+
 }
 
 func (reconciler *IdleOperatorReconciler) Reconcile(context context.Context, request ctrl.Request) (ctrl.Result, error) {
@@ -241,6 +229,9 @@ func (reconciler *IdleOperatorReconciler) Reconcile(context context.Context, req
 		return ctrl.Result{}, err
 	}
 	for _, idlingCR := range allNamespaceIdlingCR.Items {
+		if idlingCR.Status.StatusDeployments == nil {
+			idlingCR.Status.StatusDeployments = make(map[string]cachev1alpha1.StatusDeployment)
+		}
 		err = reconciler.manageIdling(context, idlingCR)
 		if err != nil {
 			logrus.Errorf("Something goes wrong while idling: %s", err.Error())

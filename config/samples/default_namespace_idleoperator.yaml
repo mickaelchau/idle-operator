@@ -6,12 +6,12 @@ metadata:
 spec:
   idle:
     - matchLabels:
-      - app: label1d
-      - tira: label2d
+      - app: label1s
+      - tira: label2
       time: 0 8 * * 1-5
       duration: 19h
     - matchLabels:
-      - app: label1x
+      - app: label1d
       time: 0 8 * * 1-5
       duration: 19h
     - matchLabels:

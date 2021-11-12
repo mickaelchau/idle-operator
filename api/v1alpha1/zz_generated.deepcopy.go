@@ -110,8 +110,10 @@ func (in *IdleOperatorStatus) DeepCopyInto(out *IdleOperatorStatus) {
 	*out = *in
 	if in.StatusDeployments != nil {
 		in, out := &in.StatusDeployments, &out.StatusDeployments
-		*out = make([]StatusDeployment, len(*in))
-		copy(*out, *in)
+		*out = make(map[string]StatusDeployment, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
 	}
 }
 

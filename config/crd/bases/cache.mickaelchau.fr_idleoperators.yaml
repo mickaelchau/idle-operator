@@ -67,24 +67,21 @@ spec:
               of IddleDeployFromCrontable
             properties:
               deployments:
-                description: 'INSERT ADDITIONAL STATUS FIELD - define observed state
-                  of cluster Important: Run "make" to regenerate code after modifying
-                  this file'
-                items:
+                additionalProperties:
                   properties:
                     isIdled:
                       type: boolean
-                    name:
-                      type: string
                     size:
                       format: int32
                       type: integer
                   required:
                   - isIdled
-                  - name
                   - size
                   type: object
-                type: array
+                description: 'INSERT ADDITIONAL STATUS FIELD - define observed state
+                  of cluster Important: Run "make" to regenerate code after modifying
+                  this file'
+                type: object
             required:
             - deployments
             type: object

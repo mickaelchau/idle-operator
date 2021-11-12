@@ -8,7 +8,7 @@ spec:
     - matchLabels:
       - test: saucisse
       time: 0 8 * * 1-5
-      duration: xh
+      duration: 2h
     - matchLabels:
       - manger: froid
       time: 0 8 * * 1-5

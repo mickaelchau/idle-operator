@@ -22,11 +22,11 @@ func IsInIdleTimezone(startTime, duration string) (bool, error) {
 	functionStartTime := time.Now()
 	substractedDurationTime := functionStartTime.Add(-timeDuration) //Automaticly removes timeDuration
 	idlingStartTime := cronStartTime.Next(substractedDurationTime)
-	logrus.Infof("Idling start the: %d/%d/%d at: %d:%d:%d", idlingStartTime.Day(), idlingStartTime.Month(),
+	logrus.Infof("Idling start the: %d/%d/%d at: %dh:%dm:%ds", idlingStartTime.Day(), idlingStartTime.Month(),
 		idlingStartTime.Year(), idlingStartTime.Hour(), idlingStartTime.Minute(),
 		idlingStartTime.Second())
 	idlingEndTime := idlingStartTime.Add(timeDuration)
-	logrus.Infof("Idling end the: %d/%d/%d at: %d:%d:%d", idlingEndTime.Day(), idlingEndTime.Month(),
+	logrus.Infof("Idling end the: %d/%d/%d at: %dh:%dm:%ds", idlingEndTime.Day(), idlingEndTime.Month(),
 		idlingEndTime.Year(), idlingEndTime.Hour(), idlingEndTime.Minute(),
 		idlingEndTime.Second())
 	isInsideTimezone := idlingStartTime.Before(functionStartTime)

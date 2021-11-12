@@ -11,12 +11,12 @@ import (
 func IsInIdleTimezone(startTime, duration string) (bool, error) {
 	cronStartTime, err := cron.ParseStandard(startTime)
 	if err != nil {
-		logrus.Errorln("'startTime' is not in CRON format", err)
+		logrus.Errorf("'startTime' is not in CRON format: %s", err)
 		return false, err
 	}
 	timeDuration, err := time.ParseDuration(duration)
 	if err != nil {
-		logrus.Errorln("'duration' is not in CRON format", err)
+		logrus.Errorf("'duration' is not in CRON format: %s", err)
 		return false, err
 	}
 	functionStartTime := time.Now()

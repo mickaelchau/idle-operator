@@ -18,7 +18,6 @@ package controllers
 
 import (
 	"context"
-	"fmt"
 
 	cronmanagment "github.com/mickaelchau/new-operator/controllers/cron_managment"
 	"github.com/sirupsen/logrus"
@@ -51,44 +50,50 @@ type IdleOperatorReconciler struct {
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.9.2/pkg/reconcile
-func watchCRStatus(Deployments []cachev1alpha1.StatusDeployment, namespace string) {
+func watchCRStatus(statusDeployments []cachev1alpha1.StatusDeployment, namespace string) {
 	logrus.Infof("Deployments Status of Namespace: %s", namespace)
-	for _, statusDeployment := range Deployments {
+	for _, statusDeployment := range statusDeployments {
 		logrus.Infof("Name = %s | Size = %d | Isdled = %t", statusDeployment.Name,
 			statusDeployment.Size, statusDeployment.IsIdled)
 	}
 }
 
+func watchListedDeployments(clusterDeployments []appsv1.Deployment, namespace string) {
+	logrus.Infof("Cluster deployments of Namespace: %s", namespace)
+	for index, clusclusterDeployment := range clusterDeployments {
+		logrus.Infof("%d: %s", index, clusclusterDeployment.Name)
+	}
+}
+
 func (reconciler *IdleOperatorReconciler) injectDeploymentsFromLabelAndNamespace(context context.Context,
-	matchingDeployments *appsv1.DeploymentList, labels []map[string]string, namespace string) error {
-	options := []client.ListOption{
+	labels []map[string]string, namespace string, matchingDeployments *appsv1.DeploymentList) error {
+	optionsForList := []client.ListOption{
 		client.InNamespace(namespace),
 	}
 	for _, label := range labels {
-		options = append(options, client.MatchingLabels(label))
+		optionsForList = append(optionsForList, client.MatchingLabels(label))
 	}
-	logrus.Infoln("Injecting deployments with those options:", options)
-	err := reconciler.List(context, matchingDeployments, options...)
+	logrus.Infof("Injecting deployments with options: %+v", optionsForList)
+	err := reconciler.List(context, matchingDeployments, optionsForList...)
+
 	if err != nil {
-		logrus.Errorln("Failed to list Deployments (with namespace & label):", err)
+		logrus.Errorf("Failed to list Deployments (with namespace & label): %s", err.Error())
 		return err
 	}
-	for _, dep := range matchingDeployments.Items {
-		logrus.Infof("%s ", dep.Name)
-	}
+	watchListedDeployments(matchingDeployments.Items, namespace)
 	return nil
 }
 
 func (reconciler *IdleOperatorReconciler) buildCRStatus(context context.Context, clusterDeployments []appsv1.Deployment,
 	idlingCR *cachev1alpha1.IdleOperator) error {
-	isStatusChanged := false
+	haveStatusChanged := false
 	for _, clusterDeployment := range clusterDeployments {
 		isAlreadyInStatus := false
 		for index, statusDeployment := range idlingCR.Status.StatusDeployments {
 			if statusDeployment.Name == clusterDeployment.ObjectMeta.Name {
-				fmt.Println("already a deployment of name", statusDeployment.Name)
-				if !isStatusChanged {
-					isStatusChanged = true
+				logrus.Infof("already a deployment of name: %s", statusDeployment.Name)
+				if !haveStatusChanged {
+					haveStatusChanged = true
 				}
 				isAlreadyInStatus = true
 				if *clusterDeployment.Spec.Replicas != 0 {
@@ -100,9 +105,9 @@ func (reconciler *IdleOperatorReconciler) buildCRStatus(context context.Context,
 			}
 		}
 		if !isAlreadyInStatus {
-			fmt.Println("No deployment of name", clusterDeployment.ObjectMeta.Name)
-			if !isStatusChanged {
-				isStatusChanged = true
+			logrus.Infof("No deployment of name %s", clusterDeployment.ObjectMeta.Name)
+			if !haveStatusChanged {
+				haveStatusChanged = true
 			}
 			var newStatusDeployment cachev1alpha1.StatusDeployment
 			newStatusDeployment.Name = clusterDeployment.ObjectMeta.Name
@@ -111,17 +116,17 @@ func (reconciler *IdleOperatorReconciler) buildCRStatus(context context.Context,
 			idlingCR.Status.StatusDeployments = append(idlingCR.Status.StatusDeployments, newStatusDeployment)
 		}
 	}
-	if isStatusChanged {
+	if haveStatusChanged {
 		err := reconciler.Status().Update(context, idlingCR)
 		if err != nil {
-			logrus.Errorln("Update status failed:", err)
+			logrus.Errorf("Update status failed: %s", err.Error())
 			return err
 		}
 	}
 	return nil
 }
 
-func remove(slice []cachev1alpha1.StatusDeployment, index int) []cachev1alpha1.StatusDeployment {
+func removeIndexFromStatusDeployments(slice []cachev1alpha1.StatusDeployment, index int) []cachev1alpha1.StatusDeployment {
 	if len(slice) > 0 {
 		return append(slice[:index], slice[index+1:]...)
 	}
@@ -148,7 +153,7 @@ func (reconciler *IdleOperatorReconciler) updateDeployment(context context.Conte
 				err := reconciler.Update(context, &clusterDeployment)
 				if err != nil {
 					logrus.Errorf("Update deployment: %s in namespace %s failed: %s",
-						clusterDeployment.Name, idlingCR.Namespace, err)
+						clusterDeployment.Name, idlingCR.Namespace, err.Error())
 				}
 			}
 		}
@@ -163,14 +168,14 @@ func (reconciler *IdleOperatorReconciler) updateDeployments(context context.Cont
 		indexToDelete := -1
 		reconciler.updateDeployment(context, idlingCR, clusterDeployment, &indexToDelete)
 		if indexToDelete != -1 {
-			idlingCR.Status.StatusDeployments = remove(idlingCR.Status.StatusDeployments, indexToDelete)
+			idlingCR.Status.StatusDeployments = removeIndexFromStatusDeployments(idlingCR.Status.StatusDeployments, indexToDelete)
 			if !isStatusChanged {
 				isStatusChanged = true
 			}
 			if isStatusChanged {
 				err := reconciler.Status().Update(context, idlingCR)
 				if err != nil {
-					logrus.Errorln("Update status failed:", err)
+					logrus.Errorf("Update status failed: %s", err.Error())
 					return err
 				}
 			}
@@ -178,6 +183,7 @@ func (reconciler *IdleOperatorReconciler) updateDeployments(context context.Cont
 	}
 	return nil
 }
+
 func (reconciler *IdleOperatorReconciler) manageIdling(context context.Context,
 	idlingCR cachev1alpha1.IdleOperator) error {
 	for index, statusDeployment := range idlingCR.Status.StatusDeployments {
@@ -189,17 +195,16 @@ func (reconciler *IdleOperatorReconciler) manageIdling(context context.Context,
 	for _, depSpecs := range idlingSpec {
 		isStartIdling, err := cronmanagment.IsInIdleTimezone(depSpecs.Time, depSpecs.Duration)
 		if err != nil {
-			logrus.Errorln("Failed to know if idling or not:", err)
+			logrus.Errorf("Failed to know if idling or not: %s", err.Error())
 			continue
 		}
 		if isStartIdling {
 			matchingDeploymentsFromLabels := &appsv1.DeploymentList{}
-			err := reconciler.injectDeploymentsFromLabelAndNamespace(context, matchingDeploymentsFromLabels,
-				depSpecs.MatchingLabels, idlingCR.Namespace)
-			//logrus.Infoln("labels:", depSpecs.MatchingLabels, "are mapped")
+			err := reconciler.injectDeploymentsFromLabelAndNamespace(context, depSpecs.MatchingLabels, idlingCR.Namespace,
+				matchingDeploymentsFromLabels)
 			if err != nil {
-				logrus.Errorf("Failed to get deployments for labels %s and namespace %s: %s", depSpecs.MatchingLabels,
-					idlingCR.Namespace, err)
+				logrus.Errorf("Failed to inject deployments for labels %s and namespace %s: %s", depSpecs.MatchingLabels,
+					idlingCR.Namespace, err.Error())
 			}
 			allMatchingDeployments.Items = append(allMatchingDeployments.Items, matchingDeploymentsFromLabels.Items...)
 		} else {
@@ -210,14 +215,14 @@ func (reconciler *IdleOperatorReconciler) manageIdling(context context.Context,
 	//all matching deploys => all deploys I have to iddle
 	reconciler.buildCRStatus(context, allMatchingDeployments.Items, &idlingCR)
 	allClusterDeployments := &appsv1.DeploymentList{}
-	err := reconciler.injectDeploymentsFromLabelAndNamespace(context, allClusterDeployments, nil, idlingCR.Namespace)
+	err := reconciler.injectDeploymentsFromLabelAndNamespace(context, nil, idlingCR.Namespace, allClusterDeployments)
 	if err != nil {
-		logrus.Errorln("Failed to inject deployments:", err)
+		logrus.Errorf("Failed to inject deployments: %s", err.Error())
 		return err
 	}
 	err = reconciler.updateDeployments(context, allClusterDeployments.Items, &idlingCR)
 	if err != nil {
-		logrus.Errorln("Failed to update cluster deployments:", err)
+		logrus.Errorf("Failed to update cluster deployments: %s", err.Error())
 		return err
 	}
 	return nil
@@ -228,17 +233,17 @@ func (reconciler *IdleOperatorReconciler) Reconcile(context context.Context, req
 	var allNamespaceIdlingCR cachev1alpha1.IdleOperatorList
 	err := reconciler.List(context, &allNamespaceIdlingCR)
 	if errors.IsNotFound(err) {
-		logrus.Infof("Custom Resource not found in the cluster at the namespace %s: %s", request.Namespace, err)
+		logrus.Infof("Custom Resource not found in the cluster at the namespace %s: %s", request.Namespace, err.Error())
 		return ctrl.Result{}, nil
 	}
 	if err != nil {
-		logrus.Errorln("Failed to List all Custom Resource:", err)
+		logrus.Errorf("Failed to List all Custom Resource: %s", err.Error())
 		return ctrl.Result{}, err
 	}
 	for _, idlingCR := range allNamespaceIdlingCR.Items {
 		err = reconciler.manageIdling(context, idlingCR)
 		if err != nil {
-			logrus.Errorln("Something goes wrong while idling:", err)
+			logrus.Errorf("Something goes wrong while idling: %s", err.Error())
 			return ctrl.Result{}, err
 		}
 		watchCRStatus(idlingCR.Status.StatusDeployments, idlingCR.Namespace)

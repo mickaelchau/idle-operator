@@ -6,10 +6,10 @@ metadata:
 spec:
   idle:
     - matchLabels:
-      - test: saucisses
+      - test: saucissed
       time: 0 8 * * 1-5
       duration: 19h
     - matchLabels:
-      - manger: froids
+      - manger: froidd
       time: 0 8 * * 1-5
       duration: 19h

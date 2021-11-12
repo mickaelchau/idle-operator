@@ -177,7 +177,6 @@ func (reconciler *IdleOperatorReconciler) manageIdling(context context.Context,
 		idlingCR.Status.StatusDeployments[index] = statusDeployment
 	}
 	idlingSpec := idlingCR.Spec.Idle
-	allMatchingDeployments := &appsv1.DeploymentList{}
 	for _, depSpecs := range idlingSpec {
 		isStartIdling, err := cronmanagment.IsInIdleTimezone(depSpecs.Time, depSpecs.Duration)
 		if err != nil {
@@ -192,14 +191,12 @@ func (reconciler *IdleOperatorReconciler) manageIdling(context context.Context,
 				logrus.Errorf("Failed to inject deployments for labels %s and namespace %s: %s", depSpecs.MatchingLabels,
 					idlingCR.Namespace, err.Error())
 			}
-			allMatchingDeployments.Items = append(allMatchingDeployments.Items, matchingDeploymentsFromLabels.Items...)
+			reconciler.buildCRStatus(context, matchingDeploymentsFromLabels.Items, &idlingCR)
 		} else {
 			logrus.Infof("Deployments for label %s and namespace %s does not match timezone", depSpecs.MatchingLabels,
 				idlingCR.Namespace)
 		}
 	}
-	//all matching deploys => all deploys I have to iddle
-	reconciler.buildCRStatus(context, allMatchingDeployments.Items, &idlingCR)
 	allClusterDeployments := &appsv1.DeploymentList{}
 	err := reconciler.injectDeploymentsFromLabelAndNamespace(context, nil, idlingCR.Namespace, allClusterDeployments)
 	if err != nil {

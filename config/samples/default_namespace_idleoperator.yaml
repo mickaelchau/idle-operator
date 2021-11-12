@@ -6,8 +6,8 @@ metadata:
 spec:
   idle:
     - matchLabels:
-      - app: label1
-      - tira: label2
+      - app: label1f
+      - tira: label2f
       time: 0 8 * * 1-5
       duration: 10h
     - matchLabels:
@@ -15,6 +15,6 @@ spec:
       time: 0 8 * * 1-5
       duration: 2h
     - matchLabels:
-      - test: saucissed
+      - test: saucissedc
       time: 0 8 * * 1-5
       duration: 0h

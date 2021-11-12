@@ -50,11 +50,11 @@ type IdleOperatorReconciler struct {
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.9.2/pkg/reconcile
+
 func watchCRStatus(statusDeployments map[string]cachev1alpha1.StatusDeployment, namespace string) {
 	logrus.Infof("Deployments Status of Namespace: %s", namespace)
 	for name, statusDeployment := range statusDeployments {
-		logrus.Infof("Name = %s | Size = %d | Isdled = %t", name,
-			statusDeployment.Size, statusDeployment.IsIdled)
+		logrus.Infof("Name = %s | Size = %d", name, statusDeployment.Size)
 	}
 }
 
@@ -95,83 +95,8 @@ func (reconciler *IdleOperatorReconciler) injectDeploymentsFromLabelAndNamespace
 	return nil
 }
 
-func (reconciler *IdleOperatorReconciler) buildCRStatus(context context.Context, clusterDeployments []appsv1.Deployment,
-	idlingCR *cachev1alpha1.IdleOperator) error {
-	haveStatusChanged := false
-	statusDeployments := idlingCR.Status.StatusDeployments
-	for _, clusterDeployment := range clusterDeployments {
-		if !haveStatusChanged {
-			haveStatusChanged = true
-		}
-		statusDeployment, isInStatus := statusDeployments[clusterDeployment.ObjectMeta.Name]
-		if isInStatus {
-			logrus.Infof("There's already a deployment of name: %s in Status", clusterDeployment.ObjectMeta.Name)
-			if *clusterDeployment.Spec.Replicas != 0 {
-				statusDeployment.Size = *clusterDeployment.Spec.Replicas
-			} else {
-				statusDeployment.IsIdled = true
-			}
-			idlingCR.Status.StatusDeployments[clusterDeployment.ObjectMeta.Name] = statusDeployment
-		} else {
-			logrus.Infof("There's no deployment of name %s in Status", clusterDeployment.ObjectMeta.Name)
-			var newStatusDeployment cachev1alpha1.StatusDeployment
-			newStatusDeployment.Size = *clusterDeployment.Spec.Replicas
-			newStatusDeployment.IsIdled = true
-			idlingCR.Status.StatusDeployments[clusterDeployment.ObjectMeta.Name] = newStatusDeployment
-		}
-	}
-	return nil
-}
-
-func (reconciler *IdleOperatorReconciler) updateDeployment(context context.Context, idlingCR *cachev1alpha1.IdleOperator,
-	clusterDeployment appsv1.Deployment, haveToDelete *bool) error {
-	hasClusterDeploymentChanged := false
-	statusDeployments := idlingCR.Status.StatusDeployments
-	statusDeployment, isInStatus := statusDeployments[clusterDeployment.ObjectMeta.Name]
-	if isInStatus {
-		if !statusDeployment.IsIdled {
-			if !*haveToDelete {
-				*haveToDelete = true
-			}
-			*clusterDeployment.Spec.Replicas = statusDeployment.Size
-			hasClusterDeploymentChanged = true
-		}
-		if statusDeployment.IsIdled && *clusterDeployment.Spec.Replicas != 0 {
-			*clusterDeployment.Spec.Replicas = 0
-			hasClusterDeploymentChanged = true
-		}
-		if hasClusterDeploymentChanged {
-			err := reconciler.Update(context, &clusterDeployment)
-			if err != nil {
-				logrus.Errorf("Update deployment: %s in namespace %s failed: %s",
-					clusterDeployment.Name, idlingCR.Namespace, err.Error())
-			}
-		}
-	}
-	return nil
-}
-
-func (reconciler *IdleOperatorReconciler) updateDeployments(context context.Context, clusterDeployments []appsv1.Deployment,
-	idlingCR *cachev1alpha1.IdleOperator) error {
-	for _, clusterDeployment := range clusterDeployments {
-		haveToDelete := false
-		reconciler.updateDeployment(context, idlingCR, clusterDeployment, &haveToDelete)
-		if haveToDelete {
-			delete(idlingCR.Status.StatusDeployments, clusterDeployment.ObjectMeta.Name)
-			if len(idlingCR.Status.StatusDeployments) == 0 {
-				idlingCR.Status.StatusDeployments = map[string]cachev1alpha1.StatusDeployment{}
-			}
-		}
-	}
-	return nil
-}
-
 func (reconciler *IdleOperatorReconciler) manageIdling(context context.Context,
 	idlingCR cachev1alpha1.IdleOperator) error {
-	for index, statusDeployment := range idlingCR.Status.StatusDeployments {
-		statusDeployment.IsIdled = false
-		idlingCR.Status.StatusDeployments[index] = statusDeployment
-	}
 	idlingSpec := idlingCR.Spec.Idle
 	for _, depSpecs := range idlingSpec {
 		matchingDeploymentsFromLabels := &appsv1.DeploymentList{}
@@ -186,18 +111,35 @@ func (reconciler *IdleOperatorReconciler) manageIdling(context context.Context,
 			logrus.Errorf("Failed to know if idling or not: %s", err.Error())
 			continue
 		}
-		if isStartIdling {
-			logrus.Infof("Deployments match timezone")
-			err = reconciler.buildCRStatus(context, matchingDeploymentsFromLabels.Items, &idlingCR)
-			if err != nil {
-				logrus.Errorf("Fail to build CR Status: %s", err.Error())
+		statusDeployments := idlingCR.Status.StatusDeployments
+		clusterDeployments := matchingDeploymentsFromLabels.Items
+		for _, clusterDeployment := range clusterDeployments {
+			hasClusterDeploymentChanged := true
+			statusDeployment, isInStatus := statusDeployments[clusterDeployment.ObjectMeta.Name]
+			if isStartIdling {
+				logrus.Infof("Deployment: %s match timezone", clusterDeployment.ObjectMeta.Name)
+				if *clusterDeployment.Spec.Replicas != 0 {
+					var updatedStatusDeployment cachev1alpha1.StatusDeployment
+					updatedStatusDeployment.Size = *clusterDeployment.Spec.Replicas
+					idlingCR.Status.StatusDeployments[clusterDeployment.ObjectMeta.Name] = updatedStatusDeployment
+					*clusterDeployment.Spec.Replicas = 0
+				}
+			} else {
+				logrus.Infof("Deployment: %s does not match timezone", clusterDeployment.ObjectMeta.Name)
+				if isInStatus {
+					*clusterDeployment.Spec.Replicas = statusDeployment.Size
+					delete(idlingCR.Status.StatusDeployments, clusterDeployment.ObjectMeta.Name)
+				} else {
+					hasClusterDeploymentChanged = false
+				}
 			}
-		} else {
-			logrus.Infof("Deployments does not match timezone")
-		}
-		err = reconciler.updateDeployments(context, matchingDeploymentsFromLabels.Items, &idlingCR)
-		if err != nil {
-			logrus.Errorf("Failed to update cluster deployments: %s", err.Error())
+			if hasClusterDeploymentChanged {
+				err := reconciler.Update(context, &clusterDeployment)
+				if err != nil {
+					logrus.Errorf("Update deployment: %s in namespace %s failed: %s",
+						clusterDeployment.Name, idlingCR.Namespace, err.Error())
+				}
+			}
 		}
 	}
 	err := reconciler.Status().Update(context, &idlingCR)

@@ -18,7 +18,6 @@ package controllers
 
 import (
 	"context"
-	"fmt"
 
 	cronmanagment "github.com/mickaelchau/new-operator/controllers/cron_managment"
 	"github.com/sirupsen/logrus"
@@ -121,13 +120,6 @@ func (reconciler *IdleOperatorReconciler) buildCRStatus(context context.Context,
 			idlingCR.Status.StatusDeployments[clusterDeployment.ObjectMeta.Name] = newStatusDeployment
 		}
 	}
-	if haveStatusChanged {
-		err := reconciler.Status().Update(context, idlingCR)
-		if err != nil {
-			logrus.Errorf("Update status failed in build cr: %s", err.Error())
-			return err
-		}
-	}
 	return nil
 }
 
@@ -138,7 +130,6 @@ func (reconciler *IdleOperatorReconciler) updateDeployment(context context.Conte
 	statusDeployment, isInStatus := statusDeployments[clusterDeployment.ObjectMeta.Name]
 	if isInStatus {
 		if !statusDeployment.IsIdled {
-			fmt.Println("la?")
 			if !*haveToDelete {
 				*haveToDelete = true
 			}
@@ -162,7 +153,6 @@ func (reconciler *IdleOperatorReconciler) updateDeployment(context context.Conte
 
 func (reconciler *IdleOperatorReconciler) updateDeployments(context context.Context, clusterDeployments []appsv1.Deployment,
 	idlingCR *cachev1alpha1.IdleOperator) error {
-	haveStatusChanged := false
 	for _, clusterDeployment := range clusterDeployments {
 		haveToDelete := false
 		reconciler.updateDeployment(context, idlingCR, clusterDeployment, &haveToDelete)
@@ -171,16 +161,6 @@ func (reconciler *IdleOperatorReconciler) updateDeployments(context context.Cont
 			if len(idlingCR.Status.StatusDeployments) == 0 {
 				idlingCR.Status.StatusDeployments = map[string]cachev1alpha1.StatusDeployment{}
 			}
-			if !haveStatusChanged {
-				haveStatusChanged = true
-			}
-		}
-	}
-	if haveStatusChanged {
-		err := reconciler.Status().Update(context, idlingCR)
-		if err != nil {
-			logrus.Errorf("Update status failed in update: %s", err.Error())
-			return err
 		}
 	}
 	return nil
@@ -193,8 +173,6 @@ func (reconciler *IdleOperatorReconciler) manageIdling(context context.Context,
 		idlingCR.Status.StatusDeployments[index] = statusDeployment
 	}
 	idlingSpec := idlingCR.Spec.Idle
-	allMatchingDeployments := &appsv1.DeploymentList{}
-	timeMatchingDeployments := &appsv1.DeploymentList{}
 	for _, depSpecs := range idlingSpec {
 		matchingDeploymentsFromLabels := &appsv1.DeploymentList{}
 		err := reconciler.injectDeploymentsFromLabelAndNamespace(context, depSpecs.MatchingLabels, idlingCR.Namespace,
@@ -210,32 +188,21 @@ func (reconciler *IdleOperatorReconciler) manageIdling(context context.Context,
 		}
 		if isStartIdling {
 			logrus.Infof("Deployments match timezone")
-			/*
-				err = reconciler.buildCRStatus(context, matchingDeploymentsFromLabels.Items, &idlingCR)
-				if err != nil {
-					logrus.Errorf("Fail to build CR Status: %s", err.Error())
-				}
-			*/
-			timeMatchingDeployments.Items = append(timeMatchingDeployments.Items, matchingDeploymentsFromLabels.Items...)
+			err = reconciler.buildCRStatus(context, matchingDeploymentsFromLabels.Items, &idlingCR)
+			if err != nil {
+				logrus.Errorf("Fail to build CR Status: %s", err.Error())
+			}
 		} else {
 			logrus.Infof("Deployments does not match timezone")
 		}
-		/*
-			err = reconciler.updateDeployments(context, matchingDeploymentsFromLabels.Items, &idlingCR)
-			if err != nil {
-				logrus.Errorf("Failed to update cluster deployments: %s", err.Error())
-				return err
-			}
-		*/
-		allMatchingDeployments.Items = append(allMatchingDeployments.Items, matchingDeploymentsFromLabels.Items...)
+		err = reconciler.updateDeployments(context, matchingDeploymentsFromLabels.Items, &idlingCR)
+		if err != nil {
+			logrus.Errorf("Failed to update cluster deployments: %s", err.Error())
+		}
 	}
-	err := reconciler.buildCRStatus(context, timeMatchingDeployments.Items, &idlingCR)
+	err := reconciler.Status().Update(context, &idlingCR)
 	if err != nil {
-		logrus.Errorf("Fail to build CR Status: %s", err.Error())
-	}
-	err = reconciler.updateDeployments(context, allMatchingDeployments.Items, &idlingCR)
-	if err != nil {
-		logrus.Errorf("Failed to update cluster deployments: %s", err.Error())
+		logrus.Errorf("Update status failed in update: %s", err.Error())
 		return err
 	}
 	return nil

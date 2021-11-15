@@ -69,13 +69,13 @@ spec:
               deployments:
                 additionalProperties:
                   properties:
-                    isIdled:
+                    hasTreated:
                       type: boolean
                     size:
                       format: int32
                       type: integer
                   required:
-                  - isIdled
+                  - hasTreated
                   - size
                   type: object
                 description: 'INSERT ADDITIONAL STATUS FIELD - define observed state

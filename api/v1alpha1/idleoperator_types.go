@@ -30,8 +30,8 @@ type IdlingSpecs struct {
 }
 
 type StatusDeployment struct {
-	Size    int32 `json:"size"`
-	IsIdled bool  `json:"isIdled"`
+	Size       int32 `json:"size"`
+	HasTreated bool  `json:"hasTreated"`
 }
 
 // IddleDeployFromCrontableSpec defines the desired state of IddleDeployFromCrontable

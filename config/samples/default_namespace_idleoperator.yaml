@@ -7,14 +7,14 @@ spec:
   idle:
     - matchLabels:
       - app: label1
+      - tira: label2
       time: 0 8 * * 1-5
-      duration: 1h
+      duration: 2h
     - matchLabels:
       - app: label1
-      - tira: label2
       time: 0 8 * * 1-5
       duration: 10h
     - matchLabels:
       - test: saucissedc
-      time: 0 10 * * 1-5
-      duration: 9h
+      time: 0 d0 * * 1-5
+      duration: 8h

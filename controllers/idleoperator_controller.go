@@ -94,19 +94,29 @@ func (reconciler *IdleOperatorReconciler) injectDeploymentsFromLabelAndNamespace
 	return nil
 }
 
+func (reconciler *IdleOperatorReconciler) updateClusterDeployment(context context.Context,
+	clusterDeployment appsv1.Deployment, namespace string) {
+	err := reconciler.Update(context, &clusterDeployment)
+	if err != nil {
+		logrus.Errorf("Update deployment: %s in namespace: %s failed: %s",
+			clusterDeployment.Name, namespace, err.Error())
+	}
+	logrus.Infof("Update deployment: %s in namespace: %s succeed !", clusterDeployment.Name, namespace)
+}
+
 func (reconciler *IdleOperatorReconciler) matchingDeploymentsChangedToDesiredState(context context.Context,
 	isStartIdling bool, clusterDeployments []appsv1.Deployment, idlingCR *cachev1alpha1.IdleOperator) {
 	statusDeployments := idlingCR.Status.StatusDeployments
 	for _, clusterDeployment := range clusterDeployments {
+		statusDeployment, isInStatus := statusDeployments[clusterDeployment.ObjectMeta.Name]
+		if isInStatus && statusDeployment.HasTreated {
+			continue
+		}
+		hasClusterDeploymentChanged := false
 		var updatedStatusDeployment cachev1alpha1.StatusDeployment
 		updatedStatusDeployment.HasTreated = true
-		hasClusterDeploymentChanged := false
-		statusDeployment, isInStatus := statusDeployments[clusterDeployment.ObjectMeta.Name]
 		if isInStatus {
 			updatedStatusDeployment.Size = statusDeployment.Size
-		}
-		if statusDeployment.HasTreated {
-			continue
 		}
 		if isStartIdling {
 			logrus.Infof("Deployment: %s match timezone", clusterDeployment.ObjectMeta.Name)
@@ -124,20 +134,15 @@ func (reconciler *IdleOperatorReconciler) matchingDeploymentsChangedToDesiredSta
 		}
 		idlingCR.Status.StatusDeployments[clusterDeployment.ObjectMeta.Name] = updatedStatusDeployment
 		if hasClusterDeploymentChanged {
-			err := reconciler.Update(context, &clusterDeployment)
-			if err != nil {
-				logrus.Errorf("Update deployment: %s in namespace: %s failed: %s",
-					clusterDeployment.Name, idlingCR.Namespace, err.Error())
-			}
-			logrus.Infof("Update deployment: %s in namespace: %s succeed !", clusterDeployment.Name, idlingCR.Namespace)
+			reconciler.updateClusterDeployment(context, clusterDeployment, idlingCR.Namespace)
 		}
 	}
 }
 
 func (reconciler *IdleOperatorReconciler) manageIdling(context context.Context, idlingCR *cachev1alpha1.IdleOperator) bool {
 	idlingSpec := idlingCR.Spec.Idle
-	for i := len(idlingSpec) - 1; i >= 0; i-- {
-		depSpecs := idlingSpec[i]
+	for index := len(idlingSpec) - 1; index >= 0; index-- {
+		depSpecs := idlingSpec[index]
 		matchingDeploymentsFromLabels := &appsv1.DeploymentList{}
 		err := reconciler.injectDeploymentsFromLabelAndNamespace(context, depSpecs.MatchingLabels, idlingCR.Namespace,
 			matchingDeploymentsFromLabels)

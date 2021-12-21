@@ -16,5 +16,5 @@ spec:
       duration: 10h
     - matchLabels:
       - test: saucissedc
-      time: 0 d0 * * 1-5
+      time: 0 0 * * 1-5
       duration: 8h
